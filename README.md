@@ -15,10 +15,12 @@ DB can be 'MSSQL' or 'Oracle'.
 ConnectionString is connection string to connect to DB.
 
 eg,
+```js
     'MS SQL Source': {
         DB: 'MSSQL',
         ConnectionString: "Data Source=Hostname\\DbInstance;Initial Catalog=DbName;Integrated Security=True"
     }
+```
 
 ## Tasks
 
@@ -38,12 +40,12 @@ DataSource is defined in 'Data Sources' configuration.
 Queries is to define queries to be executed. Queries are sequential execution in order.
 
 eg,
-    TaskType: 'Run SQL',<br/>
-    DbSource: 'MS SQL Source',<br/>
-    Queries: [<br/>
-        'DELETE FROM Table',<br/>
-        "INSERT INTO Table(ColumnA, ColumnB) values(number, 'VarChar')"<br/>
-    ]<br/>
+    TaskType: 'Run SQL',
+    DbSource: 'MS SQL Source',
+    Queries: [
+        'DELETE FROM Table',
+        "INSERT INTO Table(ColumnA, ColumnB) values(number, 'VarChar')"
+    ]
 
 ### Copy DB Table
 
