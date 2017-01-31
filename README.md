@@ -40,12 +40,14 @@ DataSource is defined in 'Data Sources' configuration.
 Queries is to define queries to be executed. Queries are sequential execution in order.
 
 eg,
+```js
     TaskType: 'Run SQL',
     DbSource: 'MS SQL Source',
     Queries: [
         'DELETE FROM Table',
         "INSERT INTO Table(ColumnA, ColumnB) values(number, 'VarChar')"
     ]
+```
 
 ### Copy DB Table
 
@@ -56,10 +58,12 @@ DbSource and DbDestination are defined in 'Data Sources' configuration.
 TableName is the table to copy from DbSource DB to DbDestination DB.
 
 eg,
+```js
     TaskType: 'Copy DB Table',
     DbSource: 'MS SQL Source',
     DbDestination: 'MS SQL Dest',
     TableName: 'Table',
+```
 
 ### Insert DB data
 
@@ -74,6 +78,7 @@ Transforms are function names to inject to Data-Flow-Task. After data is obtaine
 DbDestination Queries is to define queries to be executed. Queries are sequential execution in order.
 
 eg,
+```js
     TaskType: 'Insert DB data',
     DbSource: {
         Name: 'MS SQL Source',
@@ -86,6 +91,7 @@ eg,
             "Insert Into DestTable (DestCol1, DestCol2) Values(${Row.COL1}, '${Row.COL2}')"
         ]
     }
+```
 
 ### Insert CSV data
 
@@ -100,6 +106,7 @@ DbDestination Names is defined in 'Data Sources' configuration.
 DbDestination Queries is to define queries to be executed. Queries are sequential execution in order.
 
 eg,
+```js
     TaskType: 'Insert CSV data',
     CsvSource: {
         File: './test.csv',
@@ -114,6 +121,7 @@ eg,
             "Insert Into fok (b) Values('${Row[2]}')"
         ]
     }
+```
 
 ## Usage
 
