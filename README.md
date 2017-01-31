@@ -38,12 +38,12 @@ DataSource is defined in 'Data Sources' configuration.
 Queries is to define queries to be executed. Queries are sequential execution in order.
 
 eg,
-TaskType: 'Run SQL',
-DbSource: 'MS SQL Source',
-Queries: [
-    'DELETE FROM Table',
-    "INSERT INTO Table(ColumnA, ColumnB) values(number, 'VarChar')"
-]
+    TaskType: 'Run SQL',<br/>
+    DbSource: 'MS SQL Source',<br/>
+    Queries: [<br/>
+        'DELETE FROM Table',<br/>
+        "INSERT INTO Table(ColumnA, ColumnB) values(number, 'VarChar')"<br/>
+    ]<br/>
 
 ### Copy DB Table
 
