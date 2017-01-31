@@ -117,8 +117,8 @@ eg,
     DbDestination: {
         Name: 'MS SQL Dest',
         Queries: [
-            "Insert Into fok (a,b) Values(${Row[0]},'${Row[1]}')",
-            "Insert Into fok (b) Values('${Row[2]}')"
+            "Insert Into DestTableA (DestCol1, DestCol2) Values(${Row.COL1}, '${Row.COL2}')",
+            "Update DestTableB Set DestCol1=${Row.COL1}, DestCol2='${Row.COL2}' Where ID = ${Param.ID}"
         ]
     }
 ```
