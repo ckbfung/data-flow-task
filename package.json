@@ -1,0 +1,17 @@
+{
+  "name": "data-flow-task",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "csv-parse": "^1.2.0",
+    "edge": "^6.5.1",
+    "edge-sql": "^0.1.2",
+    "oracledb": "^1.12.2"
+  }
+}
