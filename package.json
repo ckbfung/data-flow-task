@@ -11,10 +11,15 @@
     "url": "git+https://github.com/ckbfung/data-flow-task.git"
   },
   "keywords": [
-    "schema",
-    "synchronize",
-    "sync",
-    "git"
+    "task",
+    "data flow",
+    "work flow",
+    "data flow injection",
+    "work flow injection",
+    "csv to db",
+    "copy table",
+    "insert data",
+    "update data"
   ],
   "author": "ckbfung",
   "license": "MIT",
