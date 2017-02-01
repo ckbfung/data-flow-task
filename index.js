@@ -48,10 +48,10 @@ function getConnection(dataSouceName, dataSource, callback) {
 }
 
 function runSQL(name, task, config, emitter, callback) {
-    emitter.emit('Message', `Start ${task.TaskType} ${name}.`)
+    emitter.emit('Message', `Start ${task.TaskType} ${name}.`, task)
 
     if (task.Queries != null && util.isArray(task.Queries)) {
-        emitter.emit('Message', task.DbSource)
+        emitter.emit('Message', task.DbSource, task)
         getConnection(task.DbSource, config.DataSource, function(err, conn) {
             if (err) {
                 callback(err)
@@ -64,10 +64,10 @@ function runSQL(name, task, config, emitter, callback) {
                         callback(null)
                     } else {
                         var query = eval("`" + task.Queries[idx] + "`")
-                        emitter.emit('Query', `${task.DbSource}: Execute: ${query}`)
+                        emitter.emit('Query', `${task.DbSource}: Execute: ${query}`, task)
 
                         conn.execute(query, function(error, result) {
-                            if (error) {
+                            if (task.IgnoreError === false && error) {
                                 callback(error)
                             } else {
                                 executeQuery(++idx)
@@ -83,71 +83,114 @@ function runSQL(name, task, config, emitter, callback) {
     }
 }
 
-function copyDbTable(name, task, config, emitter, callback) {
-    emitter.emit('Message', `Start ${task.TaskType} ${name}.`)
+function copyTable(srcConn, destConn, tableName, taskName, task, config, emitter, callback) {
+    var Param = config.Param
 
-    if (task.TableName != null) {
-        emitter.emit('Message', task.DbSource)
+    var query = `Select * from ${tableName}`
+    emitter.emit('Query', `${task.DbSource}: Execute: ${query}`, task)
+
+    srcConn.execute(query, function(error, selectedRows) {
+        if (error) {
+            callback(error)
+        } else if (selectedRows.length <= 0) {
+            callback(null)
+        } else {
+            var columns = []
+            for (var column in selectedRows[0]) {
+                if (selectedRows[0].hasOwnProperty(column)) {
+                    columns.push(column);
+                }
+            }
+
+            var insertColumns = columns.join(',')
+            var insertedRows = 0
+            var insertRow = function(idx) {
+                if (idx >= selectedRows.length) {
+                    emitter.emit('Message', `${taskName} Task: ${idx} rows are copied.`, task)
+                    callback(null)
+                } else {
+                    var vals = []
+                    for(var column of columns) {
+                        var val = selectedRows[idx][column]
+                        if (val == null) {
+                            vals.push('null')
+                        } else if (isNaN(val)) {
+                            vals.push(`'${val}'`)
+                        } else {
+                            vals.push(val)
+                        }
+                    }
+                    var insertVals = vals.join(',')
+                    var insert = `insert into ${tableName} (${insertColumns}) values(${insertVals})`
+                    emitter.emit('Query', `${task.DbSource}: Execute: ${insert}`, task)
+
+                    destConn.execute(insert, function(error) {
+                        if (error) {
+                            callback(error)
+                        } else {
+                            insertRow(++idx)
+                        }
+                    })
+                }
+            }
+            insertRow(0)
+        }
+    })
+}
+
+function copyDbTable(name, task, config, emitter, callback) {
+    emitter.emit('Message', `Start ${task.TaskType} ${name}.`, task)
+
+    if (task.TableNames != null && util.isArray(task.TableNames)) {
+        emitter.emit('Message', task.DbSource, task)
+
         getConnection(task.DbSource, config.DataSource, function(err, srcConn) {
             if (err) {
                 callback(err)
             } else if (srcConn == null) {
                 callback(`Fail to connection to ${task.DbSource}.`)
             } else {
-                emitter.emit('Message', task.DbDestination)
+                emitter.emit('Message', task.DbDestination, task)
                 getConnection(task.DbDestination, config.DataSource, function(err, destConn) {
                     if (err) {
                         callback(err)
                     } else if (destConn == null) {
                         callback(`Fail to connection to ${task.DbDestination}.`)
                     } else {
-                        var query = `select * from ${task.TableName}`
-                        emitter.emit('Query', `${task.DbSource}: Execute: ${query}`)
-
-                        srcConn.execute(query, function(error, selectedRows) {
-                            if (error) {
-                                callback(error)
-                            } else if (selectedRows.length <= 0) {
+                        var iterateTables = function(idx) {
+                            if (idx >= task.TableNames.length) {
                                 callback(null)
                             } else {
-                                var columns = []
-                                for (var column in selectedRows[0]) {
-                                    if (selectedRows[0].hasOwnProperty(column)) {
-                                        columns.push(column);
-                                    }
-                                }
-                                var insertColumns = columns.join(',')
-                                var insertedRows = 0
-                                var insertRow = function(idx) {
-                                    if (idx >= selectedRows.length) {
-                                        emitter.emit('Message', `${name} Task: ${idx} rows are copied.`)
-                                        callback(null)
-                                    } else {
-                                        var vals = []
-                                        for(var column of columns) {
-                                            var val = selectedRows[idx][column]
-                                            if (val == null) {
-                                                vals.push('null')
-                                            } else if (isNaN(val)) {
-                                                vals.push(`'${val}'`)
-                                            } else {
-                                                vals.push(val)
-                                            }
+                                var tableName = task.TableNames[idx]
+                                if (task.TruncateFirst === true) {
+                                    var query = `delete from ${tableName}`
+                                    emitter.emit('Query', `${task.DbSource}: Execute: ${query}`, task)
+
+                                    destConn.execute(query, function(error) {
+                                        if (error) {
+                                            callback(error)
+                                        } else {
+                                            copyTable(srcConn, destConn, tableName, name, task, config, emitter, function(err) {
+                                                if (err) {
+                                                    callback(err)
+                                                } else {
+                                                    iterateTables(++idx)
+                                                }
+                                            })
                                         }
-                                        var insertVals = vals.join(',')
-                                        var insert = `insert into ${task.TableName} (${insertColumns}) values(${insertVals})`
-                                        destConn.execute(insert, function(error) {
-                                            if (error) {
-                                                callback(error)
-                                            } else {
-                                                insertRow(++idx)
-                                            }
-                                        })
-                                    }
+                                    })
+                                } else {
+                                    copyTable(srcConn, destConn, tableName, name, task, config, emitter, function(err) {
+                                        if (err) {
+                                            callback(err)
+                                        } else {
+                                            iterateTables(++idx)
+                                        }
+                                    })
                                 }
-                                insertRow(0)
                             }
-                        })
+                        }
+                        iterateTables(0)
                     }
                 })
             }
@@ -168,7 +211,7 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
                 executeQuery(rowIdx, Row, ++queryIdx)
             } else {
                 var insert = eval("`" + task.DbDestination.Queries[queryIdx] + "`")
-                emitter.emit('Query', `${task.DbDestination.Name}: Execute: ${insert}`)
+                emitter.emit('Query', `${task.DbDestination.Name}: Execute: ${insert}`, task)
 
                 destConn.execute(insert, function(error) {
                     if (error) {
@@ -187,7 +230,7 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
 
     var insertRow = function(rowIdx) {
         if (rowIdx >= rows.length) {
-            emitter.emit('Message', `${name} Task: ${rowIdx} rows are Inserted.`)
+            emitter.emit('Message', `${name} Task: ${rowIdx} rows are Inserted.`, task)
             callback(null)
         } else {
             var row = rows[rowIdx]
@@ -215,11 +258,11 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
 }
 
 function insertDbData(name, task, config, emitter, callback) {
-    emitter.emit('Message', `Start ${task.TaskType} ${name}.`)
+    emitter.emit('Message', `Start ${task.TaskType} ${name}.`, task)
 
     if (task.DbSource.Query != null &&
         task.DbDestination.Queries != null && util.isArray(task.DbDestination.Queries)) {
-        emitter.emit('Message', task.DbSource.Name)
+        emitter.emit('Message', task.DbSource.Name, task)
 
         getConnection(task.DbSource.Name, config.DataSource, function(err, srcConn) {
             if (err) {
@@ -227,7 +270,7 @@ function insertDbData(name, task, config, emitter, callback) {
             } else if (srcConn == null) {
                 callback(`Fail to connection to ${task.DbSource.Name}.`)
             } else {
-                emitter.emit('Message', task.DbDestination.Name)
+                emitter.emit('Message', task.DbDestination.Name, task)
                 getConnection(task.DbDestination.Name, config.DataSource, function(err, destConn) {
                     if (err) {
                         callback(err)
@@ -236,7 +279,7 @@ function insertDbData(name, task, config, emitter, callback) {
                     } else {
                         var Param = config.Param
                         var query = eval('`' + task.DbSource.Query + '`')
-                        emitter.emit('Query', `${task.DbSource.Name}: Execute: ${query}`)
+                        emitter.emit('Query', `${task.DbSource.Name}: Execute: ${query}`, task)
 
                         srcConn.execute(query, function(error, selectedRows) {
                             if (error) {
@@ -257,11 +300,11 @@ function insertDbData(name, task, config, emitter, callback) {
 }
 
 function insertDbDataFromCsv(name, task, config, emitter, callback) {
-    emitter.emit('Message', `Start ${task.TaskType} ${name}.`)
+    emitter.emit('Message', `Start ${task.TaskType} ${name}.`, task)
 
     if ( task.CsvSource != null && task.CsvSource.File != null &&
          task.CsvSource.SkipHeader != null && task.CsvSource.Delimiter != null ) {
-        emitter.emit('Message', task.DbDestination.Name)
+        emitter.emit('Message', task.DbDestination.Name, task)
 
         var skipLine = task.CsvSource.SkipHeader
         getConnection(task.DbDestination.Name, config.DataSource, function(err, destConn) {
@@ -270,7 +313,7 @@ function insertDbDataFromCsv(name, task, config, emitter, callback) {
             } else if (destConn == null) {
                 callback(`Fail to connection to ${task.DbDestination}.`)
             } else {
-                emitter.emit('Message', task.CsvSource.File)
+                emitter.emit('Message', task.CsvSource.File, task)
                 var csvData = []
                 fs.createReadStream(task.CsvSource.File)
                     .pipe(parse({delimiter: task.CsvSource.Delimiter}))

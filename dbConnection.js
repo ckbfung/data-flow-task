@@ -16,7 +16,7 @@ function dbConnection(db, connectionString) {
 function oracleConnection(connectionString) {
     if (oracledb == null) {
         oracledb = require('oracledb')
-        oracledb.fetchAsString = [ oracledb.CLOB ]
+        oracledb.fetchAsString = [ oracledb.CLOB, oracledb.DATE ]
     }
     return {
         connectString: connectionString,
@@ -24,7 +24,7 @@ function oracleConnection(connectionString) {
             var executed = function(err, result) {
                 var objects = []
                 if (err == null) {
-                    if (result != null && result.rows.length > 0) {
+                    if (result != null && result.rows != null && result.rows.length > 0) {
                         for(var row of result.rows) {
                             var obj = {}
                             for(var i=0; i<result.metaData.length; ++i) {

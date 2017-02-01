@@ -46,7 +46,8 @@ eg,
     Queries: [
         'DELETE FROM Table',
         "INSERT INTO Table(ColumnA, ColumnB) values(number, 'VarChar')"
-    ]
+    ],
+    IgnoreError: false
 ```
 
 ### Copy DB Table
@@ -62,7 +63,8 @@ eg,
     TaskType: 'Copy DB Table',
     DbSource: 'MS SQL Source',
     DbDestination: 'MS SQL Dest',
-    TableName: 'Table',
+    TableName: [ 'Table' ],
+    TruncateFirst: true
 ```
 
 ### Insert DB data
@@ -148,12 +150,14 @@ var dataFlow = {
             'DELETE FROM Table',
             'DELETE FROM ${Param.TableName}'
         ],
+        IgnoreError: false
 	},
 	CopyTable: {
 		TaskType: 'Copy DB Table',
 		DbSource: 'MS SQL Source',
 		DbDestination: 'MS SQL Dest',
-		TableName: '${Param.TableName}',
+        TableNames: ['${Param.TableName}'],
+        TruncateFirst: true
 	},
     // InsertData is an Array. Each task in Array are executed asynchronously.
 	InsertData: [
