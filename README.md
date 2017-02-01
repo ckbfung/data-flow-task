@@ -63,7 +63,7 @@ eg,
     TaskType: 'Copy DB Table',
     DbSource: 'MS SQL Source',
     DbDestination: 'MS SQL Dest',
-    TableName: [ 'Table' ],
+    TableNames: [ 'Table' ],
     TruncateFirst: true
 ```
 

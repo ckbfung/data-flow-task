@@ -61,14 +61,14 @@ function runSQL(name, task, config, emitter, callback) {
                 var Param = config.Param
                 var executeQuery = function(idx) {
                     if (idx >= task.Queries.length) {
-                        callback(null)
+                        conn.close(callback)
                     } else {
                         var query = eval("`" + task.Queries[idx] + "`")
                         emitter.emit('Query', `${task.DbSource}: Execute: ${query}`, task)
 
                         conn.execute(query, function(error, result) {
                             if (task.IgnoreError === false && error) {
-                                callback(error)
+                                conn.close(callback, error)
                             } else {
                                 executeQuery(++idx)
                             }
@@ -91,7 +91,7 @@ function copyTable(srcConn, destConn, tableName, taskName, task, config, emitter
 
     srcConn.execute(query, function(error, selectedRows) {
         if (error) {
-            callback(error)
+            srcConn.close(callback, error)
         } else if (selectedRows.length <= 0) {
             callback(null)
         } else {
@@ -107,7 +107,9 @@ function copyTable(srcConn, destConn, tableName, taskName, task, config, emitter
             var insertRow = function(idx) {
                 if (idx >= selectedRows.length) {
                     emitter.emit('Message', `${taskName} Task: ${idx} rows are copied.`, task)
-                    callback(null)
+                    srcConn.close(function(err) {
+                        destConn.close(callback, err)
+                    })
                 } else {
                     var vals = []
                     for(var column of columns) {
@@ -122,11 +124,13 @@ function copyTable(srcConn, destConn, tableName, taskName, task, config, emitter
                     }
                     var insertVals = vals.join(',')
                     var insert = `insert into ${tableName} (${insertColumns}) values(${insertVals})`
-                    emitter.emit('Query', `${task.DbSource}: Execute: ${insert}`, task)
+                    emitter.emit('Query', `${task.DbDestination}: Execute: ${insert}`, task)
 
                     destConn.execute(insert, function(error) {
                         if (error) {
-                            callback(error)
+                            srcConn.close(function() {
+                                destConn.close(callback, error)
+                            })
                         } else {
                             insertRow(++idx)
                         }
@@ -159,7 +163,9 @@ function copyDbTable(name, task, config, emitter, callback) {
                     } else {
                         var iterateTables = function(idx) {
                             if (idx >= task.TableNames.length) {
-                                callback(null)
+                                srcConn.close(function(error) {
+                                    destConn.close(callback, error)
+                                })
                             } else {
                                 var tableName = task.TableNames[idx]
                                 if (task.TruncateFirst === true) {
@@ -168,11 +174,15 @@ function copyDbTable(name, task, config, emitter, callback) {
 
                                     destConn.execute(query, function(error) {
                                         if (error) {
-                                            callback(error)
+                                            srcConn.close(function() {
+                                                destConn.close(callback, error)
+                                            })
                                         } else {
-                                            copyTable(srcConn, destConn, tableName, name, task, config, emitter, function(err) {
-                                                if (err) {
-                                                    callback(err)
+                                            copyTable(srcConn, destConn, tableName, name, task, config, emitter, function(error) {
+                                                if (error) {
+                                                    srcConn.close(function() {
+                                                        destConn.close(callback, error)
+                                                    })
                                                 } else {
                                                     iterateTables(++idx)
                                                 }
@@ -180,9 +190,11 @@ function copyDbTable(name, task, config, emitter, callback) {
                                         }
                                     })
                                 } else {
-                                    copyTable(srcConn, destConn, tableName, name, task, config, emitter, function(err) {
-                                        if (err) {
-                                            callback(err)
+                                    copyTable(srcConn, destConn, tableName, name, task, config, emitter, function(error) {
+                                        if (error) {
+                                            srcConn.close(function() {
+                                                destConn.close(callback, error)
+                                            })
                                         } else {
                                             iterateTables(++idx)
                                         }
@@ -215,7 +227,7 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
 
                 destConn.execute(insert, function(error) {
                     if (error) {
-                        callback(error)
+                        destConn.close(callback, error)
                     } else {
                         executeQuery(rowIdx, Row, ++queryIdx)
                     }
@@ -231,7 +243,7 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
     var insertRow = function(rowIdx) {
         if (rowIdx >= rows.length) {
             emitter.emit('Message', `${name} Task: ${rowIdx} rows are Inserted.`, task)
-            callback(null)
+            destConn.close(callback)
         } else {
             var row = rows[rowIdx]
             var runTransform = function(idx) {
@@ -241,19 +253,18 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
                     var transform = task.Transforms[idx]
                     config.Transforms[transform](
                         row, context,
-                        function(err) {
-                            if (err) {
-                                callback(err)
-                                return
+                        function(error) {
+                            if (error) {
+                                destConn.close(callback, error)
+                            } else {
+                                runTransform(++idx)
                             }
-                            runTransform(++idx)
                         })
                 }
             }
             runTransform(0)
         }
     }
-
     insertRow(0)
 }
 
@@ -283,11 +294,20 @@ function insertDbData(name, task, config, emitter, callback) {
 
                         srcConn.execute(query, function(error, selectedRows) {
                             if (error) {
-                                callback(error)
+                                srcConn.close(callback, error)
                             } else if (selectedRows.length <= 0) {
                                 callback(null)
                             } else {
-                                insertData(destConn, selectedRows, name, task, config, emitter, callback)
+                                insertData(destConn, selectedRows, name, task, config, emitter,
+                                    function(error) {
+                                        srcConn.close(function(closeError) {
+                                            if (error) {
+                                                destConn.close(callback, error)
+                                            } else {
+                                                destConn.close(callback, closeError)
+                                            }
+                                        })
+                                    })
                             }
                         })
                     }
@@ -325,7 +345,10 @@ function insertDbDataFromCsv(name, task, config, emitter, callback) {
                         }
                     })
                     .on('end',function() {
-                        insertData(destConn, csvData, name, task, config, emitter, callback)
+                        insertData(destConn, csvData, name, task, config, emitter,
+                            function(error) {
+                                destConn.close(callback, error)
+                            })
                     })
             }
         })

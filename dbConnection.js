@@ -19,7 +19,28 @@ function oracleConnection(connectionString) {
         oracledb.fetchAsString = [ oracledb.CLOB, oracledb.DATE ]
     }
     return {
+        oracleConnection: null,
         connectString: connectionString,
+        close: function(callback, err) {
+            var self = this
+            if (err === undefined) {
+                err = null
+            }
+            if (this.oracleConnection != null) {
+                this.oracleConnection.commit(function() {
+                    self.oracleConnection.release(function(closeError) {
+                        self.oracleConnection = null
+                        if (err) {
+                            callback(err)
+                        } else {
+                            callback(closeError)
+                        } 
+                    })
+                })
+            } else {
+                callback(err)
+            }
+        },
         execute: function(query, callback) {
             var executed = function(err, result) {
                 var objects = []
@@ -36,26 +57,32 @@ function oracleConnection(connectionString) {
                 }
                 return objects
             }
-            var connected = function(err, connection) {
-                if (err) {
-                    callback(err)
-                } else {
-                    connection.execute(
-                        query, [], { maxRows: 10000 },
-                        function(err, result) {
-                            var objects = executed(err, result)
-                            connection.release(function() {
-                                callback(err, objects)
-                            })
-                        })
-                }
+            var connected = function(connection) {
+                connection.execute(
+                    query, [], { autoCommit: false, maxRows: 500000 },
+                    function(err, result) {
+                        var objects = executed(err, result)
+                        callback(err, objects)
+                    })
             }
-            oracledb.getConnection(
-                {
-                    externalAuth: true,
-                    connectString: this.connectString
-                },
-                connected)
+            if (this.oracleConnection != null) {
+                connected(this.oracleConnection)
+            } else {
+                var self = this
+                oracledb.getConnection(
+                    {
+                        externalAuth: true,
+                        connectString: this.connectString
+                    },
+                    function(err, conn) {
+                        if (err) {
+                            callback(err)
+                        } else {
+                            self.oracleConnection = conn
+                            connected(conn)
+                        }
+                    })
+            }
         }
     }
 }
@@ -66,6 +93,13 @@ function msSqlConnection(connectionString) {
     }
     return {
         connectString: connectionString,
+        close: function(callback, err) {
+            if (err === undefined) {
+                callback(null)
+            } else {
+                callback(err)
+            }
+        },
         execute: function(query, callback) {
             var edgeQuery = mssql.func('sql',
                 {
