@@ -106,7 +106,7 @@ function copyTable(srcConn, destConn, tableName, taskName, task, config, emitter
             var insertedRows = 0
             var insertRow = function(idx) {
                 if (idx >= selectedRows.length) {
-                    emitter.emit('Message', `${taskName} Task: ${idx} rows are copied.`, task)
+                    emitter.emit('Message', `${taskName} Task: ${idx} rows are copied to ${tableName}.`, task)
                     srcConn.close(function(err) {
                         destConn.close(callback, err)
                     })
