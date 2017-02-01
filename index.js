@@ -117,7 +117,7 @@ function copyTable(srcConn, destConn, tableName, taskName, task, config, emitter
                         if (val == null) {
                             vals.push('null')
                         } else if (isNaN(val)) {
-                            vals.push(`'${val}'`)
+                            vals.push(`'${val.replace(/'/g, "''")}'`)
                         } else {
                             vals.push(val)
                         }
