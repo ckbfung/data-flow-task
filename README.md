@@ -28,6 +28,7 @@ There are four Tasks supported.
 
 * Run SQL
 * Copy DB Table
+* Compare Query Results
 * Insert DB data
 * Insert CSV data
 
@@ -65,6 +66,33 @@ eg,
     DbDestination: 'MS SQL Dest',
     TableNames: [ 'Table' ],
     TruncateFirst: true
+```
+
+### Compare Query Results
+
+Define a TaskType: 'Compare Query Results'.
+
+DbSource and DbDestination are defined in 'Data Sources' and query configuration.
+
+Compare:Key is to define the Key columns for comparsion.
+
+Compare:Transform is to define the function to tranfrom the compare results.
+
+eg,
+```js
+    TaskType: 'Compare Query Results',
+    DbSource: {
+        Name: 'MS SQL Source',
+        Query: 'Select COL1, COL2 from Table1 where id = ${Param.ID}'
+    },
+    DbDestination: {
+        Name: 'MS SQL Dest',
+        Query: 'Select COL1, COL2 from Table2 where id = ${Param.ID}'
+    },
+    Compare: {
+        Keys: [ 'COL1', 'COL2' ],
+        Transforms: ['Transform1', 'Transform2', 'Transform3']
+    }
 ```
 
 ### Insert DB data
@@ -192,7 +220,22 @@ var dataFlow = {
                 ]
             }
 		}
-	]
+	],
+    CompareQueries: {
+        TaskType: 'Compare Query Results',
+        DbSource: {
+            Name: 'MS SQL Source',
+            Query: 'SELECT COL1, COL2, COL3 FROM SourceTable'
+        },
+        DbDestination: {
+            Name: 'MS SQL Dest',
+            Query: 'SELECT COL1, COL2, COL3 FROM DestTable'
+        },
+        Compare: {
+            Keys: [ 'COL1', 'COL2' ],
+            Transforms: [ 'TransformCompare' ]
+        }
+    }
 }
 
 function Transform1(row, context, callback) {
@@ -215,6 +258,11 @@ function TransformCSV(row, context, callback) {
     callback()
 }
 
+function TransformCompare(row, context, callback) {
+    console.log('Call TransformCompare')
+    callback()
+}
+
 var dataFlowTask = DataFlowTask(dataSources, dataFlow)
 dataFlowTask.on('Message', function(msg) {
     console.log('Message:', msg)
@@ -226,6 +274,7 @@ dataFlowTask.on('Query', function(msg) {
 
 dataFlowTask.Start(
     { ID: 10, TableName:'TestTable' },
+    {},
     [Transform1, Transform2, Transform3, TransformCSV],
     function(err) {
         if (err) {

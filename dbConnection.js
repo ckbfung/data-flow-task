@@ -59,7 +59,7 @@ function oracleConnection(connectionString) {
             }
             var connected = function(connection) {
                 connection.execute(
-                    query, [], { autoCommit: false, maxRows: 500000 },
+                    query, [], { autoCommit: false, maxRows: 1000000 },
                     function(err, result) {
                         var objects = executed(err, result)
                         callback(err, objects)

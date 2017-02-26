@@ -47,6 +47,23 @@ function getConnection(dataSouceName, dataSource, callback) {
     }
 }
 
+function compareXY(x, y) {
+    if (isNaN(x) && isNaN(y) && typeof x === 'number' && typeof y === 'number') {
+        return 1
+    }
+
+    if (x === y) {
+        return 1
+    }
+
+    if ((x instanceof Date && y instanceof Date) ||
+        (x instanceof String && y instanceof String) ||
+        (x instanceof Number && y instanceof Number)) {
+        return (x.toString() === y.toString()) ? 1:0
+    }
+    return 0
+}
+
 function runSQL(name, task, config, emitter, callback) {
     emitter.emit('Message', `Start ${task.TaskType} ${name}.`, task)
 
@@ -157,9 +174,13 @@ function copyDbTable(name, task, config, emitter, callback) {
                 emitter.emit('Message', task.DbDestination, task)
                 getConnection(task.DbDestination, config.DataSource, function(err, destConn) {
                     if (err) {
-                        callback(err)
+                        srcConn.close(function() {
+                            callback(err)
+                        })
                     } else if (destConn == null) {
-                        callback(`Fail to connection to ${task.DbDestination}.`)
+                        srcConn.close(function() {
+                            callback(`Fail to connection to ${task.DbDestination}.`)
+                        })
                     } else {
                         var iterateTables = function(idx) {
                             if (idx >= task.TableNames.length) {
@@ -212,6 +233,228 @@ function copyDbTable(name, task, config, emitter, callback) {
     }
 }
 
+function compareQueryResults(name, task, config, emitter, callback) {
+    emitter.emit('Message', `Start ${task.TaskType} ${name}.`, task)
+
+    emitter.emit('Message', task.DbSource.Name, task)
+    getConnection(task.DbSource.Name, config.DataSource, function(err, srcConn) {
+        if (err) {
+            callback(err)
+        } else if (srcConn == null) {
+            callback(`Fail to connection to ${task.DbSource.Name}.`)
+        } else {
+            emitter.emit('Message', task.DbDestination.Name, task)
+            getConnection(task.DbDestination.Name, config.DataSource, function(err, destConn) {
+                if (err) {
+                    srcConn.close(function() {
+                        callback(err)
+                    })
+                } else if (destConn == null) {
+                    srcConn.close(function() {
+                        callback(`Fail to connection to ${task.DbDestination.Name}.`)
+                    })
+                } else {
+                    var Param = config.Param
+
+                    var srcQuery = eval("`" + task.DbSource.Query + "`")
+                    emitter.emit('Query', `Execute: ${srcQuery}`, task)
+
+                    var destQuery = eval("`" + task.DbDestination.Query + "`")
+                    emitter.emit('Query', `Execute: ${destQuery}`, task)
+
+                    srcConn.execute(srcQuery, function(error, srcRows) {
+                        if (error) {
+                            srcConn.close(function(error) {
+                                destConn.close(callback, error)
+                            })
+                        } else {
+                            destConn.execute(destQuery, function(error, destRows) {
+                                if (error) {
+                                    srcConn.close(function(error) {
+                                        destConn.close(callback, error)
+                                    })
+                                } else if (task.Compare.Keys == null || task.Compare.Keys.length == 0) {
+                                    srcConn.close(function() {
+                                        destConn.close(callback, 'Compare Key is not specified.')
+                                    })
+                                } else {
+                                    var buildUniqueIdx = function(rows) {
+                                        var hash = {}
+                                        for(var i=0; i<rows.length; ++i) {
+                                            var row = rows[i]
+                                            var node = hash
+                                            for(var x=0; x<task.Compare.Keys.length; ++x) {
+                                                var k = row[task.Compare.Keys[x]]
+                                                if (!(k in node) || !node.hasOwnProperty(k)) {
+                                                    node[k] = {}
+                                                }
+                                                node = node[k]
+                                            }
+                                            node['Data'] = row
+                                            node['Checked'] = 0
+                                        }
+                                        return hash
+                                    }
+
+                                    function* getNode(node) {
+                                        for (var k in node) {
+                                            if (node.hasOwnProperty(k)) {
+                                                yield { Key: k, Node: node[k] }
+                                            }
+                                        }
+                                    }
+
+                                    function* iterateNode(srcNode, destNode, idx, keyList) {
+                                        if (keyList == null) {
+                                            keyList = []
+                                            for(var i=0; i<=idx; ++i) {
+                                                keyList.push('')
+                                            }
+                                        }
+                                        var nodeIter = getNode(srcNode)
+                                        var nodeNext = nodeIter.next()
+                                        while (nodeNext.done == false) {
+                                            var childNode = null
+                                            var key = nodeNext.value.Key
+                                            keyList[idx] = key
+                                            if (destNode != null && (key in destNode)
+                                                    && destNode.hasOwnProperty(key)) {
+                                                childNode = destNode[key]
+                                            }
+                                            if (idx == 0) {
+                                                var keys = JSON.parse(JSON.stringify(keyList))
+                                                keys.reverse()
+                                                if (childNode == null) {
+                                                    yield { Source: nodeNext.value.Node, Dest: null, Keys: keys }
+                                                } else {
+                                                    yield { Source: nodeNext.value.Node, Dest: childNode, Keys: keys }
+                                                }
+                                            } else {
+                                                var iter = iterateNode(nodeNext.value.Node, childNode, idx-1, keyList)
+                                                var next = iter.next()
+                                                while (next.done == false) {
+                                                    yield next.value
+                                                    next = iter.next()
+                                                }
+                                            }
+                                            nodeNext = nodeIter.next()
+                                        }
+                                    }
+
+                                    function* unCheckedDestNode(node, idx) {
+                                        var nodeIter = getNode(node)
+                                        var nodeNext = nodeIter.next()
+                                        while (nodeNext.done == false) {
+                                            if (idx == 0) {
+                                                yield nodeNext.value.Node
+                                            } else {
+                                                var iter = unCheckedDestNode(nodeNext.value.Node, idx-1)
+                                                var next = iter.next()
+                                                while (next.done == false) {
+                                                    yield next.value
+                                                    next = iter.next()
+                                                }
+                                            }
+                                            nodeNext = nodeIter.next()
+                                        }
+                                    }
+
+                                    var compareRow = function(srcRow, destRow) {
+                                        var diff = {}
+                                        for (var k in srcRow) {
+                                            if (srcRow.hasOwnProperty(k)) {
+                                                diff[k] = compareXY(srcRow[k], destRow[k])
+                                            }
+                                        }
+                                        return { A: srcRow, B: destRow, Diff: diff }
+                                    }
+
+                                    var compared = {
+                                        InSource: [],
+                                        InDestination: [],
+                                        Diff: []
+                                    }
+
+                                    var srcHash = buildUniqueIdx(srcRows)
+                                    var destHash = buildUniqueIdx(destRows)
+
+                                    var iter = iterateNode(srcHash, destHash, task.Compare.Keys.length-1)
+                                    var n = iter.next()
+                                    while (n.done == false) {
+                                        var source = n.value.Source
+                                        if (source != null) {
+                                            source.Checked = 1
+                                        }
+                                        var dest = n.value.Dest
+                                        if (dest != null) {
+                                            dest.Checked = 1
+                                            compared.Diff.push(compareRow(source.Data, dest.Data))
+                                        } else {
+                                            compared.InSource.push(source.Data)
+                                        }
+                                        n = iter.next()
+                                    }
+
+                                    iter = unCheckedDestNode(destHash, task.Compare.Keys.length-1)
+                                    n = iter.next()
+                                    while (n.done == false) {
+                                        if (n.value.Checked == 0) {
+                                            compared.InDestination.push(n.value.Data)
+                                        }
+                                        n = iter.next()
+                                    }
+
+                                    var compareTransform = function(idx, transform, callback) {
+                                        if (idx >= compared.Diff.length) {
+                                            callback(null)
+                                        } else {
+                                            transform(
+                                                compared.Diff[idx], config.Context[name],
+                                                function(error) {
+                                                    if (error) {
+                                                        callback(error)
+                                                    } else {
+                                                        compareTransform(++idx, transform, callback)
+                                                    }
+                                                })
+                                        }
+                                    }
+
+                                    var runTransform = function(idx) {
+                                        if (idx >= task.Compare.Transforms.length) {
+                                            srcConn.close(function(error) {
+                                                destConn.close(callback, error)
+                                            })
+                                        } else {
+                                            var transform = task.Compare.Transforms[idx]
+                                            compareTransform(0, config.Transforms[transform], function(err) {
+                                                if (error) {
+                                                    srcConn.close(function(error) {
+                                                        destConn.close(callback, error)
+                                                    })
+                                                } else{
+                                                    runTransform(++idx)
+                                                }
+                                            })
+                                        }
+                                    }
+
+                                    config.Context[name]['Compared'] = compared
+                                    if (task.Compare.Transforms != null && task.Compare.Transforms.length > 0) {
+                                        runTransform(0)
+                                    } else {
+                                        callback(null)
+                                    }
+                                }
+                            })
+                        }
+                    })
+                }
+            })
+        }
+    })
+}
+
 function insertData(destConn, rows, name, task, config, emitter, callback) {
     var Param = config.Param
 
@@ -236,10 +479,6 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
         }
     }
 
-    var context = {}
-    context['Name'] = name
-    context['Task'] = task
-
     var insertRow = function(rowIdx) {
         if (rowIdx >= rows.length) {
             emitter.emit('Message', `${name} Task: ${rowIdx} rows are Inserted.`, task)
@@ -252,7 +491,7 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
                 } else {
                     var transform = task.Transforms[idx]
                     config.Transforms[transform](
-                        row, context,
+                        row, config.Context[name],
                         function(error) {
                             if (error) {
                                 destConn.close(callback, error)
@@ -284,9 +523,13 @@ function insertDbData(name, task, config, emitter, callback) {
                 emitter.emit('Message', task.DbDestination.Name, task)
                 getConnection(task.DbDestination.Name, config.DataSource, function(err, destConn) {
                     if (err) {
-                        callback(err)
+                        srcConn.close(function() {
+                            callback(err)
+                        })
                     } else if (destConn == null) {
-                        callback(`Fail to connection to ${task.DbDestination}.`)
+                        srcConn.close(function() {
+                            callback(`Fail to connection to ${task.DbDestination}.`)
+                        })
                     } else {
                         var Param = config.Param
                         var query = eval('`' + task.DbSource.Query + '`')
@@ -358,10 +601,15 @@ function insertDbDataFromCsv(name, task, config, emitter, callback) {
 }
 
 function executeTask(name, task, config, emitter, callback) {
+    config.Context[name] = {
+        Task: task
+    }
     if (task.TaskType == null) {
         callback(null)
     } else if (task.TaskType === 'Run SQL') {
         runSQL(name, task, config, emitter, callback)
+    } else if (task.TaskType === 'Compare Query Results') {
+        compareQueryResults(name, task, config, emitter, callback) 
     } else if (task.TaskType === 'Copy DB Table') {
         copyDbTable(name, task, config, emitter, callback) 
     } else if (task.TaskType === 'Insert DB data') {
@@ -373,7 +621,7 @@ function executeTask(name, task, config, emitter, callback) {
     }
 }
 
-DataFlowTask.prototype.Start = function start(param, transforms, callback) {
+DataFlowTask.prototype.Start = function start(param, context, transforms, callback) {
     callback = getCallback(callback)
 
     var self = this
@@ -381,12 +629,12 @@ DataFlowTask.prototype.Start = function start(param, transforms, callback) {
     config.DataSource = JSON.parse(JSON.stringify(self.DataSource))
     config.DataFlow = JSON.parse(JSON.stringify(self.DataFlow))
     config.Param = JSON.parse(JSON.stringify(param))
+    config.Context = context
 
     config.Transforms = {}
     for(var transform of transforms) {
         config.Transforms[transform.name] = transform
     }
-
     var keys = []
     for (var key in config.DataFlow) {
         if (config.DataFlow.hasOwnProperty(key)) {
