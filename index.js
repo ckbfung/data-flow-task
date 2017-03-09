@@ -264,13 +264,13 @@ function compareQueryResults(name, task, config, emitter, callback) {
 
                     srcConn.execute(srcQuery, function(error, srcRows) {
                         if (error) {
-                            srcConn.close(function(error) {
+                            srcConn.close(function() {
                                 destConn.close(callback, error)
                             })
                         } else {
                             destConn.execute(destQuery, function(error, destRows) {
                                 if (error) {
-                                    srcConn.close(function(error) {
+                                    srcConn.close(function() {
                                         destConn.close(callback, error)
                                     })
                                 } else if (task.Compare.Keys == null || task.Compare.Keys.length == 0) {
@@ -414,7 +414,9 @@ function compareQueryResults(name, task, config, emitter, callback) {
                                                     if (error) {
                                                         callback(error)
                                                     } else {
-                                                        compareTransform(++idx, transform, callback)
+                                                        setTimeout(function() {
+                                                            compareTransform(++idx, transform, callback)
+                                                        }, 0)
                                                     }
                                                 })
                                         }
@@ -429,7 +431,7 @@ function compareQueryResults(name, task, config, emitter, callback) {
                                             var transform = task.Compare.Transforms[idx]
                                             compareTransform(0, config.Transforms[transform], function(err) {
                                                 if (error) {
-                                                    srcConn.close(function(error) {
+                                                    srcConn.close(function() {
                                                         destConn.close(callback, error)
                                                     })
                                                 } else{
@@ -443,7 +445,9 @@ function compareQueryResults(name, task, config, emitter, callback) {
                                     if (task.Compare.Transforms != null && task.Compare.Transforms.length > 0) {
                                         runTransform(0)
                                     } else {
-                                        callback(null)
+                                        srcConn.close(function(error) {
+                                            destConn.close(callback, error)
+                                        })
                                     }
                                 }
                             })
