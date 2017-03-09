@@ -282,3 +282,49 @@ dataFlowTask.Start(
         }
 })
 ```
+
+```yaml
+SourceDataSources: &srcDB
+  DB: MSSQL
+  ConnectionString: Data Source=Hostname\\DbInstance;Initial Catalog=DbName;Integrated Security=True
+
+DestDataSources: &destDB
+  DB: MSSQL
+  ConnectionString: Data Source=Hostname\\DbInstance;Initial Catalog=DbName;Integrated Security=True
+
+DataFlow:
+  Cleanup:
+    TaskType: Run SQL
+    DbSource: *srcDB
+    Queryies:
+      - DELETE FROM Table
+      - DELETE FROM ${Param.TableName}
+    IgnoreError: true
+
+  CopyTable:
+    TaskType: Copy DB Table
+    DbSource: *srcDB
+    DbDestination: *destDB
+    TableNames:
+      - ${Param.TableName}
+    TruncateFirst: false
+
+	InsertData:
+      - TaskType: Insert DB data
+        DbSource:
+          Name: *srcDB
+          Query: Select COL1, COL2 from Table Where ID = ${Param.ID}
+        Transforms:
+          - Transform1
+          - Transform2
+          - Transform3
+        DbDestination:
+          Name: *destDB
+		  Queries:
+            - |
+                Insert Into DestTableA (DestCol1, DestCol2)
+                Values(${Row.COL1}, '${Row.COL2}')
+            - |
+                Update DestTableB Set DestCol1=${Row.COL1}, DestCol2='${Row.COL2}'
+                Where ID = ${Param.ID}
+```

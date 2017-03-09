@@ -1,18 +1,26 @@
 'use strict'
 
-var util = require('util')
-var fs = require('fs')
-var parse = require('csv-parse')
-var eventEmitter = require('events').EventEmitter
-var dbConnection = require('./dbConnection')
+const util = require('util')
+const fs = require('fs')
+const parse = require('csv-parse')
+const eventEmitter = require('events').EventEmitter
+const dbConnection = require('./dbConnection')
+const yaml = require('js-yaml')
 
 function DataFlowTask(dataSource, dataFlow) {
     if ((this instanceof DataFlowTask) == false) {
         return new DataFlowTask(dataSource, dataFlow)
     }
 
-    this.DataSource = dataSource
-    this.DataFlow = dataFlow
+    if (dataFlow != undefined) {
+        this.DataSource = dataSource
+        this.DataFlow = dataFlow
+    } else {
+        this.DataSource = null
+        let config = yaml.safeLoad(
+            fs.readFileSync(dataSource, 'utf8'))
+        this.DataFlow = config.DataFlow
+    }
 
     eventEmitter.call(this)
 }
@@ -30,11 +38,13 @@ var getCallback = function(callback) {
     }
 }
 
-function getConnection(dataSouceName, dataSource, callback) {
-    if (dataSouceName == null) {
+function getConnection(dataSourceName, dataSource, callback) {
+    if (dataSourceName == null) {
         callback("Empty DataSource")
-    } else if (dataSouceName in dataSource) {
-        var dsConfig = dataSource[dataSouceName]
+    } else if (dataSource == null) {
+        callback(null, dbConnection(dataSourceName.DB, dataSourceName.ConnectionString))
+    } else if (dataSourceName in dataSource) {
+        var dsConfig = dataSource[dataSourceName]
         if (dsConfig.DB == null) {
             callback(`${dataSourceName}: Miss DB.`)
         } else if (dsConfig.ConnectionString == null) {
@@ -73,7 +83,7 @@ function runSQL(name, task, config, emitter, callback) {
             if (err) {
                 callback(err)
             } else if (conn == null) {
-                callback(`Fail to connection to ${task.DbSource}.`)
+                callback(`Fail to connect to ${task.DbSource}.`)
             } else {
                 var Param = config.Param
                 var executeQuery = function(idx) {
@@ -169,7 +179,7 @@ function copyDbTable(name, task, config, emitter, callback) {
             if (err) {
                 callback(err)
             } else if (srcConn == null) {
-                callback(`Fail to connection to ${task.DbSource}.`)
+                callback(`Fail to connect to ${task.DbSource}.`)
             } else {
                 emitter.emit('Message', task.DbDestination, task)
                 getConnection(task.DbDestination, config.DataSource, function(err, destConn) {
@@ -179,7 +189,7 @@ function copyDbTable(name, task, config, emitter, callback) {
                         })
                     } else if (destConn == null) {
                         srcConn.close(function() {
-                            callback(`Fail to connection to ${task.DbDestination}.`)
+                            callback(`Fail to connect to ${task.DbDestination}.`)
                         })
                     } else {
                         var iterateTables = function(idx) {
@@ -241,7 +251,7 @@ function compareQueryResults(name, task, config, emitter, callback) {
         if (err) {
             callback(err)
         } else if (srcConn == null) {
-            callback(`Fail to connection to ${task.DbSource.Name}.`)
+            callback(`Fail to connect to ${task.DbSource.Name}.`)
         } else {
             emitter.emit('Message', task.DbDestination.Name, task)
             getConnection(task.DbDestination.Name, config.DataSource, function(err, destConn) {
@@ -251,7 +261,7 @@ function compareQueryResults(name, task, config, emitter, callback) {
                     })
                 } else if (destConn == null) {
                     srcConn.close(function() {
-                        callback(`Fail to connection to ${task.DbDestination.Name}.`)
+                        callback(`Fail to connect to ${task.DbDestination.Name}.`)
                     })
                 } else {
                     var Param = config.Param
@@ -522,7 +532,7 @@ function insertDbData(name, task, config, emitter, callback) {
             if (err) {
                 callback(err)
             } else if (srcConn == null) {
-                callback(`Fail to connection to ${task.DbSource.Name}.`)
+                callback(`Fail to connect to ${task.DbSource.Name}.`)
             } else {
                 emitter.emit('Message', task.DbDestination.Name, task)
                 getConnection(task.DbDestination.Name, config.DataSource, function(err, destConn) {
@@ -532,7 +542,7 @@ function insertDbData(name, task, config, emitter, callback) {
                         })
                     } else if (destConn == null) {
                         srcConn.close(function() {
-                            callback(`Fail to connection to ${task.DbDestination}.`)
+                            callback(`Fail to connect to ${task.DbDestination}.`)
                         })
                     } else {
                         var Param = config.Param
@@ -578,7 +588,7 @@ function insertDbDataFromCsv(name, task, config, emitter, callback) {
             if (err) {
                 callback(err)
             } else if (destConn == null) {
-                callback(`Fail to connection to ${task.DbDestination}.`)
+                callback(`Fail to connect to ${task.DbDestination}.`)
             } else {
                 emitter.emit('Message', task.CsvSource.File, task)
                 var csvData = []
@@ -630,11 +640,14 @@ DataFlowTask.prototype.Start = function start(param, context, transforms, callba
 
     var self = this
     var config = {}
-    config.DataSource = JSON.parse(JSON.stringify(self.DataSource))
+    if (self.DataSource == null) {
+        config.DataSource = null
+    } else {
+        config.DataSource = JSON.parse(JSON.stringify(self.DataSource))
+    }
     config.DataFlow = JSON.parse(JSON.stringify(self.DataFlow))
     config.Param = JSON.parse(JSON.stringify(param))
     config.Context = context
-
     config.Transforms = {}
     for(var transform of transforms) {
         config.Transforms[transform.name] = transform
