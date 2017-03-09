@@ -283,6 +283,8 @@ dataFlowTask.Start(
 })
 ```
 
+YAML config sample.
+
 ```yaml
 SourceDataSources: &srcDB
   DB: MSSQL
