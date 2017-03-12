@@ -48,6 +48,7 @@ eg,
         'DELETE FROM Table',
         "INSERT INTO Table(ColumnA, ColumnB) values(number, 'VarChar')"
     ],
+    SaveResults: false,
     IgnoreError: false
 ```
 

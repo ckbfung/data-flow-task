@@ -17,9 +17,13 @@ function DataFlowTask(dataSource, dataFlow) {
         this.DataFlow = dataFlow
     } else {
         this.DataSource = null
-        let config = yaml.safeLoad(
-            fs.readFileSync(dataSource, 'utf8'))
-        this.DataFlow = config.DataFlow
+        if (typeof dataSource === 'string' || dataSource instanceof String) {
+            let config = yaml.safeLoad(
+                fs.readFileSync(dataSource, 'utf8'))
+            this.DataFlow = config.DataFlow
+        } else {
+            this.DataFlow = dataSource
+        }
     }
 
     eventEmitter.call(this)
@@ -77,7 +81,14 @@ function compareXY(x, y) {
 function runSQL(name, task, config, emitter, callback) {
     emitter.emit('Message', `Start ${task.TaskType} ${name}.`, task)
 
-    if (task.Queries != null && util.isArray(task.Queries)) {
+    if (task.Queries != null) {
+        var queries = []
+        if (util.isArray(task.Queries)) {
+            queries = task.Queries
+        } else {
+            queries.push(task.Queries)
+        }
+
         emitter.emit('Message', task.DbSource, task)
         getConnection(task.DbSource, config.DataSource, function(err, conn) {
             if (err) {
@@ -85,18 +96,25 @@ function runSQL(name, task, config, emitter, callback) {
             } else if (conn == null) {
                 callback(`Fail to connect to ${task.DbSource}.`)
             } else {
+                if (task.SaveResults === true) {
+                    config.Context[name] = { Results: [] }
+                }
+
                 var Param = config.Param
                 var executeQuery = function(idx) {
-                    if (idx >= task.Queries.length) {
+                    if (idx >= queries.length) {
                         conn.close(callback)
                     } else {
-                        var query = eval("`" + task.Queries[idx] + "`")
+                        var query = eval("`" + queries[idx] + "`")
                         emitter.emit('Query', `${task.DbSource}: Execute: ${query}`, task)
 
                         conn.execute(query, function(error, result) {
                             if (task.IgnoreError === false && error) {
                                 conn.close(callback, error)
                             } else {
+                                if (task.SaveResults === true && error == null) {
+                                    config.Context[name].Results.push(result)
+                                }
                                 executeQuery(++idx)
                             }
                         })
@@ -515,7 +533,11 @@ function insertData(destConn, rows, name, task, config, emitter, callback) {
                         })
                 }
             }
-            runTransform(0)
+            if (task.Transforms != null && task.Transforms.length > 0) {
+                runTransform(0)
+            } else {
+                executeQuery(rowIdx, row, 0)
+            }
         }
     }
     insertRow(0)
@@ -673,12 +695,11 @@ DataFlowTask.prototype.Start = function start(param, context, transforms, callba
                         function(err) {
                             if (err) {
                                 callback(err)
-                                return
-                            }
-                            if (completed >= task.length) {
-                                iterateTasks(++idx)
                             } else {
                                 ++completed
+                                if (completed >= task.length) {
+                                    iterateTasks(++idx)
+                                }
                             }
                         })
                 }
